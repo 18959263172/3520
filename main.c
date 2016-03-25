@@ -44,13 +44,20 @@ int main(int argc, char *argv[])
 
 	//主线程等待getchar()结束venc线程，返回。
     s32Ret = LIVE555_VENC_1D1_H264();
-	//结束CMD线程
-	LIVE555_StopCmdProc();
 
     if (HI_SUCCESS == s32Ret)
-        printf("program exit normally!\n");
+	{
+		//结束CMD线程
+		s32Ret = LIVE555_StopCmdProc();
+		if (HI_SUCCESS == s32Ret)
+			printf("program exit normally!\n");
+		else
+			printf("program exit abnormally!\n");
+	}
+       
     else
         printf("program exit abnormally!\n");
+	
     exit(s32Ret);
 }
 

@@ -337,6 +337,7 @@ HI_VOID* LIVE555_GetVencStreamProc()
         SAMPLE_PRT("input count invaild\n");
         return NULL;
     }
+	int fd;
     for (i = 0; i < s32ChnTotal; i++)
     {
         /* decide the stream file name, and open file to save stream */
@@ -362,10 +363,19 @@ HI_VOID* LIVE555_GetVencStreamProc()
         sprintf(aszFileName[i], "stream_chn%d%s", i, szFilePostfix);
 
         // w:write; b:open a file as a binary file;
-        pFile[i] = fopen(aszFileName[i], "wb");
+        // pFile[i] = fopen(aszFileName[i], "wb");
+		/********************* add FIFO **********************/
+		if((mkfifo(aszFileName[i],FILE_MODE)<0)&&(errno!=EEXIST))
+		{
+			printf("create streaming fifo failed,errno=%d.\n",errno);
+			return NULL;
+		}	
+		fd=open(aszFileName[i],O_WRONLY,0);	
+		pFile[i]=fdopen(fd,"w");	
+		/********************* end FIFO **********************/
         if (!pFile[i])
         {
-            SAMPLE_PRT("open file[%s] failed!\n",
+            SAMPLE_PRT("fdopen file[%s] failed!\n",
                    aszFileName[i]);
             return NULL;
         }
@@ -426,8 +436,8 @@ HI_VOID* LIVE555_GetVencStreamProc()
                      step 2.1 : query how many packs in one-frame stream.
                     *******************************************************/
 						memset(&stStream, 0, sizeof(stStream));
-                    //queries the status of a VENC channel
-					//查询编码通道状态。输出编码通道的状态指针。
+						//queries the status of a VENC channel
+						//查询编码通道状态。输出编码通道的状态指针。
 						s32Ret = HI_MPI_VENC_Query(i, &stStat);
 						if (HI_SUCCESS != s32Ret)
 						{
@@ -435,8 +445,8 @@ HI_VOID* LIVE555_GetVencStreamProc()
 							break;
 						}
 
-					//pstPack:帧码流包结构
-					//VENC_CHN_STAT_S:u32CurPacks 当前帧的码流包个数。
+						//pstPack:帧码流包结构
+						//VENC_CHN_STAT_S:u32CurPacks 当前帧的码流包个数。
 						stStream.pstPack = (VENC_PACK_S*)malloc(sizeof(VENC_PACK_S) * stStat.u32CurPacks);
 						if (NULL == stStream.pstPack)
 						{
@@ -444,11 +454,11 @@ HI_VOID* LIVE555_GetVencStreamProc()
 							break;
 						}
 
-                    /*******************************************************
-                     step 2.3 : call mpi to get one-frame stream
-                    *******************************************************/
+						/*******************************************************
+						step 2.3 : call mpi to get one-frame stream
+						*******************************************************/
 						stStream.u32PackCount = stStat.u32CurPacks;
-                    //obtains encoded streams.获取编码的码流,阻塞模式
+						//obtains encoded streams.获取编码的码流,阻塞模式
 						s32Ret = HI_MPI_VENC_GetStream(i, &stStream, HI_TRUE);
 						if (HI_SUCCESS != s32Ret)
 						{
@@ -459,9 +469,9 @@ HI_VOID* LIVE555_GetVencStreamProc()
 							break;
 						}
 
-                    /*******************************************************
-                     step 2.4 : save frame to file 将该stream里每个码流包存到文件里
-                    *******************************************************/
+						/*******************************************************
+						step 2.4 : save frame to file 将该stream里每个码流包存到文件里
+						*******************************************************/
 						s32Ret = SAMPLE_COMM_VENC_SaveStream(enPayLoadType[i], pFile[i], &stStream);
 						if (HI_SUCCESS != s32Ret)
 						{

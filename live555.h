@@ -36,7 +36,7 @@ extern "C"{
 
 #define FIFO_CMD "/tmp/cmd.fifo"
 #define CMDCharCount 20
-#define MaxChnCount 4
+#define MaxChnCount 8
 
 typedef enum fifo_cmd_name
 {
