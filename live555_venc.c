@@ -59,24 +59,18 @@ int handleSetup()
 {
 	printf("setup\n");
 	if(gs_Para.streamingStatus==0)
-	{
-		gs_Para.streamingStatus=1;
-		int i;
-		for(i=0;i<MaxChnCount;++i)
-			gs_Para.chnStatus[i]=0;
-	}
-
+    	gs_Para.streamingStatus=1;
 }
 int handlePlay(unsigned int chn)
 {
 	printf("play\n");
-	if(chn>0&&chn<MaxChnCount)
+	if(chn>=0&&chn<MaxChnCount)
 		gs_Para.chnStatus[chn]=1;
 
 }
 int handleStop(unsigned int chn)
 {
-	if(chn>0&&chn<MaxChnCount)
+	if(chn>=0&&chn<MaxChnCount)
 		gs_Para.chnStatus[chn]=0;
 	if(aliveChn()==0)
 		gs_Para.streamingStatus=0;
@@ -394,112 +388,111 @@ HI_VOID* LIVE555_GetVencStreamProc()
     /******************************************
      step 2:  Start to get streams of each channel.
     ******************************************/
+	TimeoutVal.tv_sec  = 2;
+    TimeoutVal.tv_usec = 0;
+		
     while (HI_TRUE == gs_Para.streamThreadStart)
     {
-        FD_ZERO(&read_fds);
-        for (i = 0; i < s32ChnTotal; i++)
-        {
-            FD_SET(VencFd[i], &read_fds);
-        }
 
-        TimeoutVal.tv_sec  = 2;
-        TimeoutVal.tv_usec = 0;
-        s32Ret = select(maxfd + 1, &read_fds, NULL, NULL, &TimeoutVal);
-        if (s32Ret < 0)
-        {
-            SAMPLE_PRT("select failed!\n");
-            break;
-        }
-        else if (s32Ret == 0)
-        {
-            SAMPLE_PRT("get venc stream time out, exit thread\n");
-            continue;
-        }
-        else
-        {
-            //开始遍历各个设备句柄
-            for (i = 0; i < s32ChnTotal; i++)
-            {
-                if (FD_ISSET(VencFd[i], &read_fds))
-                {
+
+        if(gs_Para.streamingStatus)
+		{
+			FD_ZERO(&read_fds);
+			for (i = 0; i < s32ChnTotal; i++)
+			{
+				if(gs_Para.chnStatus[i])
+					FD_SET(VencFd[i], &read_fds);
+			}
+		
+			s32Ret = select(maxfd + 1, &read_fds, NULL, NULL, &TimeoutVal);
+			if (s32Ret < 0)
+			{
+				SAMPLE_PRT("select failed!\n");
+				break;
+			}
+			else if (s32Ret == 0)
+			{
+				//SAMPLE_PRT("get venc stream time out, exit thread\n");
+				continue;
+			}
+			else
+			{
+				//开始遍历各个设备句柄
+				for (i = 0; i < s32ChnTotal; i++)
+				{
+					if (gs_Para.chnStatus[i]&&(FD_ISSET(VencFd[i], &read_fds)))
+					{
                     /*******************************************************
                      step 2.1 : query how many packs in one-frame stream.
                     *******************************************************/
-                    memset(&stStream, 0, sizeof(stStream));
+						memset(&stStream, 0, sizeof(stStream));
                     //queries the status of a VENC channel
 					//查询编码通道状态。输出编码通道的状态指针。
-                    s32Ret = HI_MPI_VENC_Query(i, &stStat);
-                    if (HI_SUCCESS != s32Ret)
-                    {
-                        SAMPLE_PRT("HI_MPI_VENC_Query chn[%d] failed with %#x!\n", i, s32Ret);
-                        break;
-                    }
+						s32Ret = HI_MPI_VENC_Query(i, &stStat);
+						if (HI_SUCCESS != s32Ret)
+						{
+							SAMPLE_PRT("HI_MPI_VENC_Query chn[%d] failed with %#x!\n", i, s32Ret);
+							break;
+						}
 
-                    /*******************************************************
-                     step 2.2 : malloc corresponding number of pack nodes.
-                    stStat.u32CurPacks:Number of stream packets in the current frame.
-                    stStream
-                    {
-                       pstPack:Structure of a stream frame
-                       u32PackCOunt:Number of stream packets per frame
-                       u32Seq:Sequence number of a stream.
-
-                    }
-                    *******************************************************/
 					//pstPack:帧码流包结构
 					//VENC_CHN_STAT_S:u32CurPacks 当前帧的码流包个数。
-				   stStream.pstPack = (VENC_PACK_S*)malloc(sizeof(VENC_PACK_S) * stStat.u32CurPacks);
-                    if (NULL == stStream.pstPack)
-                    {
-                        SAMPLE_PRT("malloc stream pack failed!\n");
-                        break;
-                    }
+						stStream.pstPack = (VENC_PACK_S*)malloc(sizeof(VENC_PACK_S) * stStat.u32CurPacks);
+						if (NULL == stStream.pstPack)
+						{
+							SAMPLE_PRT("malloc stream pack failed!\n");
+							break;
+						}
 
                     /*******************************************************
                      step 2.3 : call mpi to get one-frame stream
                     *******************************************************/
-                    stStream.u32PackCount = stStat.u32CurPacks;
+						stStream.u32PackCount = stStat.u32CurPacks;
                     //obtains encoded streams.获取编码的码流,阻塞模式
-                    s32Ret = HI_MPI_VENC_GetStream(i, &stStream, HI_TRUE);
-                    if (HI_SUCCESS != s32Ret)
-                    {
-                        free(stStream.pstPack);
-                        stStream.pstPack = NULL;
-                        SAMPLE_PRT("HI_MPI_VENC_GetStream failed with %#x!\n", \
+						s32Ret = HI_MPI_VENC_GetStream(i, &stStream, HI_TRUE);
+						if (HI_SUCCESS != s32Ret)
+						{
+							free(stStream.pstPack);
+							stStream.pstPack = NULL;
+							SAMPLE_PRT("HI_MPI_VENC_GetStream failed with %#x!\n", \
                                s32Ret);
-                        break;
-                    }
+							break;
+						}
 
                     /*******************************************************
                      step 2.4 : save frame to file 将该stream里每个码流包存到文件里
                     *******************************************************/
-                    s32Ret = SAMPLE_COMM_VENC_SaveStream(enPayLoadType[i], pFile[i], &stStream);
-                    if (HI_SUCCESS != s32Ret)
-                    {
-                        free(stStream.pstPack);
-                        stStream.pstPack = NULL;
-                        SAMPLE_PRT("save stream failed!\n");
-                        break;
-                    }
+						s32Ret = SAMPLE_COMM_VENC_SaveStream(enPayLoadType[i], pFile[i], &stStream);
+						if (HI_SUCCESS != s32Ret)
+						{
+							free(stStream.pstPack);
+							stStream.pstPack = NULL;
+							SAMPLE_PRT("save stream failed!\n");
+							break;
+						}
                     /*******************************************************
                      step 2.5 : release stream 释放码流缓存
                     *******************************************************/
-                    s32Ret = HI_MPI_VENC_ReleaseStream(i, &stStream);
-                    if (HI_SUCCESS != s32Ret)
-                    {
-                        free(stStream.pstPack);
-                        stStream.pstPack = NULL;
-                        break;
-                    }
+						s32Ret = HI_MPI_VENC_ReleaseStream(i, &stStream);
+						if (HI_SUCCESS != s32Ret)
+						{
+							free(stStream.pstPack);
+							stStream.pstPack = NULL;
+							break;
+						}
                     /*******************************************************
                      step 2.6 : free pack nodes
                     *******************************************************/
-                    free(stStream.pstPack);
-                    stStream.pstPack = NULL;
+						free(stStream.pstPack);
+						stStream.pstPack = NULL;
                 }
             }
         }
-    }
+ 
+		}
+
+   
+	}
 
     /*******************************************************
     * step 3 : close save-file
