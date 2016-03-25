@@ -34,8 +34,12 @@ extern "C"{
 
 #include "sample_comm.h"
 
+#define FIFO_CMD "/tmp/cmd.fifo"
+#define CMDCharCount 20
+#define MaxChnCount 4
+
 typedef enum fifo_cmd_name
-{  
+{
 	SETUP = 0,
 	PLAY,
 	STOP,
@@ -47,19 +51,35 @@ typedef struct fifo_cmd_para
      unsigned int  chn;
 }FIFO_CMD_PARA;
 
-typedef struct live555_venc_getstream_s
+typedef struct gs_para
 {
-     HI_BOOL bThreadStart;
-     HI_S32  s32Cnt;
-     HI_BOOL chnQuery[4];
-}LIVE555_VENC_GETSTREAM_PARA_S;
+	 HI_BOOL streamThreadStart;
+	 HI_BOOL cmdThreadStart;
+     pthread_t streamPid;
+     pthread_t cmdPid;
+     HI_BOOL streamingStatus;
+     HI_S32  chnCount;
+     HI_BOOL chnStatus[MaxChnCount];
+}GS_PARA;
+
+
+
 
 /*******************************************************
     function announce
 *******************************************************/
-
 HI_S32 LIVE555_VENC_1D1_H264(HI_VOID);
-
+HI_S32 LIVE555_StartGetStream(HI_S32 s32Cnt);
+HI_VOID* LIVE555_GetVencStreamProc();
+HI_S32 LIVE555_StopGetStream();
+HI_S32 LIVE555_StopCmdProc();
+void HandleSig(HI_S32);
+int handleSetup();
+int handlePlay(unsigned int chn);
+int handleStop(unsigned int chn);
+int aliveChn();
+int readCmd(FIFO_CMD_PARA* p,int fd);
+void* handleCmdProc(void *arg);
 
 
 #ifdef __cplusplus

@@ -15,7 +15,120 @@ extern "C"{
 #include "live555.h"
 VIDEO_NORM_E gs_enNorm = VIDEO_ENCODING_MODE_PAL;
 
+extern GS_PARA gs_Para;
 
+void* handleCmdProc(void *arg)
+{
+
+	int readFifo=open(FIFO_CMD,O_RDONLY,0);
+	FIFO_CMD_PARA p;
+	memset(&p,0,sizeof(FIFO_CMD_PARA));
+	gs_Para.cmdThreadStart=1;
+	while(gs_Para.cmdThreadStart)
+	{
+		if(readCmd(&p,readFifo)==1)
+		{
+
+			switch(p.cmd)
+			{
+				case SETUP:
+				handleSetup();
+				break;
+				case PLAY:
+				handlePlay(p.chn);
+				break;
+				case STOP:
+				handleStop(p.chn);
+				break;
+				default:
+				printf("error cmd,cmd=%d,chn=%d\n",p.cmd,p.chn);
+				break;
+
+			}
+			memset(&p,0,sizeof(FIFO_CMD_PARA));
+
+		}
+		//sleep(1);
+
+	}
+
+}
+
+
+int handleSetup()
+{
+	printf("setup\n");
+	if(gs_Para.streamingStatus==0)
+	{
+		gs_Para.streamingStatus=1;
+		int i;
+		for(i=0;i<MaxChnCount;++i)
+			gs_Para.chnStatus[i]=0;
+	}
+
+}
+int handlePlay(unsigned int chn)
+{
+	printf("play\n");
+	if(chn>0&&chn<MaxChnCount)
+		gs_Para.chnStatus[chn]=1;
+
+}
+int handleStop(unsigned int chn)
+{
+	if(chn>0&&chn<MaxChnCount)
+		gs_Para.chnStatus[chn]=0;
+	if(aliveChn()==0)
+		gs_Para.streamingStatus=0;
+}
+int aliveChn()
+{
+	int i;
+	int sum=0;
+	for(i=0;i<MaxChnCount;++i)
+		sum+=gs_Para.chnStatus[i];
+	return sum;
+}
+int readCmd(FIFO_CMD_PARA* p,int fd)
+{
+
+	char buffer[CMDCharCount];
+	memset(buffer,0,CMDCharCount*sizeof(char));
+	if(read(fd,buffer,CMDCharCount)<=0)
+	{
+		//printf("read failed,errno=%d.\n",errno);
+		return 0;
+
+	}
+	else
+	{
+		sscanf(buffer,"%u,%u",&p->cmd,&p->chn);
+		return 1;
+	}
+
+}
+/******************************************************************************
+* function : to process abnormal case
+******************************************************************************/
+void HandleSig(HI_S32 signo)
+{
+    if (SIGINT == signo || SIGTSTP == signo)
+    {
+        SAMPLE_COMM_SYS_Exit();
+        printf("\033[0;31mprogram termination abnormally!\033[0;39m\n");
+    }
+    exit(-1);
+}
+/******************************************************************************
+* funciton : start get venc stream process thread
+******************************************************************************/
+HI_S32 LIVE555_StartGetStream(HI_S32 s32Cnt)
+{
+    gs_Para.streamThreadStart= HI_TRUE;
+    gs_Para.chnCount=s32Cnt;
+
+    return pthread_create(&gs_Para.streamPid, 0, LIVE555_GetVencStreamProc,NULL);
+}
 /******************************************************************************
 * function :  1D1 H264 encode
 ******************************************************************************/
@@ -27,7 +140,7 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
     HI_S32 s32VpssGrpCnt = 4;
     PAYLOAD_TYPE_E enPayLoad[2]= {PT_H264, PT_H264};
     PIC_SIZE_E enSize[2] = {PIC_D1, PIC_CIF};
-	//ÂÆö‰πâËßÜÈ¢ëÁºìÂ≠òÊ±†Â±ûÊÄßÁªìÊûÑ‰ΩìÔºåÁºìÂ≠òÊ±†Êèê‰æõÂ§ßÂùóÁâ©ÁêÜÂÜÖÂ≠òÁÆ°ÁêÜÂäüËÉΩ
+	//∂®“Â ”∆µª∫¥Ê≥ÿ Ù–‘Ω·ππÃÂ£¨ª∫¥Ê≥ÿÃ·π©¥ÛøÈŒÔ¿Ìƒ⁄¥Êπ‹¿Ìπ¶ƒ‹
     VB_CONF_S stVbConf;
     VPSS_GRP VpssGrp;
     VPSS_CHN VpssChn;
@@ -48,9 +161,9 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
 
     u32BlkSize = SAMPLE_COMM_SYS_CalcPicVbBlkSize(gs_enNorm,\
                 PIC_D1, SAMPLE_PIXEL_FORMAT, SAMPLE_SYS_ALIGN_WIDTH);
-	//Êï¥‰∏™Á≥ªÁªüÂèØÂÆπÁ∫≥ÁöÑÁºìÂ≠òÊ±†‰∏™Êï∞ ‰∏ÄÁªÑÂ§ßÂ∞èÁõ∏ÂêåÔºåÁâ©ÁêÜÂú∞ÂùÄËøûÁª≠ÁöÑÁºìÂ≠òÂùóÁªÑÊàê‰∏Ä‰∏™ËßÜÈ¢ëÁºìÂ≠òÊ±†
+	//’˚∏ˆœµÕ≥ø…»›ƒ…µƒª∫¥Ê≥ÿ∏ˆ ˝ “ª◊È¥Û–°œ‡Õ¨£¨ŒÔ¿Ìµÿ÷∑¡¨–¯µƒª∫¥ÊøÈ◊È≥…“ª∏ˆ ”∆µª∫¥Ê≥ÿ
     stVbConf.u32MaxPoolCnt = 128;
-	//ÊØè‰∏™ÁºìÂ≠òÂùóÁöÑÂ§ßÂ∞èÂíåÁºìÂ≠òÂùóÁöÑ‰∏™Êï∞‰ª•ÂèäÊ≠§ÁºìÂ≠òÊ±†ÊâÄÂú®MMZÂêçÂ≠ó
+	//√ø∏ˆª∫¥ÊøÈµƒ¥Û–°∫Õª∫¥ÊøÈµƒ∏ˆ ˝“‘º∞¥Àª∫¥Ê≥ÿÀ˘‘⁄MMZ√˚◊÷
     stVbConf.astCommPool[0].u32BlkSize = u32BlkSize;
     stVbConf.astCommPool[0].u32BlkCnt = u32ViChnCnt * 6;
     memset(stVbConf.astCommPool[0].acMmzName,0,
@@ -59,7 +172,7 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
 
     /******************************************
      step 2: mpp system init.
-	 ÂàùÂßãÂåñMPPÁ≥ªÁªüÂíåMPPËßÜÈ¢ëÁºìÂ≠òÊ±†
+	 ≥ı ºªØMPPœµÕ≥∫ÕMPP ”∆µª∫¥Ê≥ÿ
     ******************************************/
     s32Ret = SAMPLE_COMM_SYS_Init(&stVbConf);
     if (HI_SUCCESS != s32Ret)
@@ -70,9 +183,9 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
 
     /******************************************
      step 3: start vi dev & chn to capture
-	 
+
     ******************************************/
-	//ÂêØÂä®enViModeÊ®°ÂºèÈáåÂÆö‰πâÁöÑËÆæÂ§á(2)ÂíåÈÄöÈÅì(4)„ÄÇbT656 2Ë∑ØÂ§çÁî®ÊñπÂºè
+	//∆Ù∂ØenViModeƒ£ Ω¿Ô∂®“Âµƒ…Ë±∏(2)∫ÕÕ®µ¿(4)°£bT656 2¬∑∏¥”√∑Ω Ω
     s32Ret = SAMPLE_COMM_VI_Start(enViMode, gs_enNorm);
     if (HI_SUCCESS != s32Ret)
     {
@@ -82,9 +195,9 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
 
     /******************************************
      step 4: start vpss and vi bind vpss
-	     VPSS ÊòØËßÜÈ¢ëÂâçÂ§ÑÁêÜÂçïÂÖÉÔºåÂÖ®Áß∞‰∏∫Video Process Sub-System„ÄÇÊîØÊåÅÂØπ‰∏ÄÂπÖËæìÂÖ•ÂõæÂÉèËøõË°å
-Áªü‰∏ÄÈ¢ÑÂ§ÑÁêÜÔºåÂ¶ÇÂéªÂô™„ÄÅÂéªÈöîË°åÁ≠âÔºåÁÑ∂ÂêéÂÜçÂØπÂêÑÈÄöÈÅìÂàÜÂà´ËøõË°åÁº©Êîæ„ÄÅÈîêÂåñÁ≠âÂ§ÑÁêÜÔºåÊúÄÂêé
-ËæìÂá∫Â§öÁßç‰∏çÂêåÂàÜËæ®ÁéáÁöÑÂõæÂÉè„ÄÇ
+	     VPSS  « ”∆µ«∞¥¶¿Ìµ•‘™£¨»´≥∆Œ™Video Process Sub-System°£÷ß≥÷∂‘“ª∑˘ ‰»ÎÕºœÒΩ¯––
+Õ≥“ª‘§¥¶¿Ì£¨»Á»•‘Î°¢»•∏Ù––µ»£¨»ª∫Û‘Ÿ∂‘∏˜Õ®µ¿∑÷±Ω¯––Àı∑≈°¢»ÒªØµ»¥¶¿Ì£¨◊Ó∫Û
+ ‰≥ˆ∂‡÷÷≤ªÕ¨∑÷±Ê¬ µƒÕºœÒ°£
     ******************************************/
     s32Ret = SAMPLE_COMM_SYS_GetPicSize(gs_enNorm, PIC_D1, &stSize);
     if (HI_SUCCESS != s32Ret)
@@ -102,14 +215,14 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
     stGrpAttr.bHistEn = HI_TRUE;
     stGrpAttr.enDieMode = VPSS_DIE_MODE_AUTO;
     stGrpAttr.enPixFmt = SAMPLE_PIXEL_FORMAT;
-	//ÂêØÂä® s32VpssGrpCnt ‰∏™VPSSÔºåÊØè‰∏™ VPSSgroupÂÜÖÂêØÂä®u32ViChnCnt‰∏™channel
+	//∆Ù∂Ø s32VpssGrpCnt ∏ˆVPSS£¨√ø∏ˆ VPSSgroupƒ⁄∆Ù∂Øu32ViChnCnt∏ˆchannel
     s32Ret = SAMPLE_COMM_VPSS_Start(s32VpssGrpCnt, &stSize, VPSS_MAX_CHN_NUM,NULL);
     if (HI_SUCCESS != s32Ret)
     {
         SAMPLE_PRT("Start Vpss failed!\n");
         goto END_VENC_8D1_1;
     }
-	 //ÊääenViModeÊ®°ÂºèÈáåÂÆö‰πâÁöÑVIÈÄöÈÅì(4)ÊØè‰∏™ÁªëÂÆö‰∏Ä‰∏™VpssGrp(0~3)
+	 //∞—enViModeƒ£ Ω¿Ô∂®“ÂµƒVIÕ®µ¿(4)√ø∏ˆ∞Û∂®“ª∏ˆVpssGrp(0~3)
     s32Ret = SAMPLE_COMM_VI_BindVpss(enViMode);
     if (HI_SUCCESS != s32Ret)
     {
@@ -134,7 +247,7 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
         VencGrp = i;
         VencChn = i;
         VpssGrp = i;
-		//ÂºÄÂêØÁºñÁ†ÅÈÄöÈÅìVencChnÂπ∂Ê≥®ÂÜåÂÖ∂Âà∞ÁºñÁ†ÅÈÄöÈÅìÁªÑVencGrp
+		//ø™∆Ù±‡¬ÎÕ®µ¿VencChn≤¢◊¢≤·∆‰µΩ±‡¬ÎÕ®µ¿◊ÈVencGrp
         s32Ret = SAMPLE_COMM_VENC_Start(VencGrp, VencChn, enPayLoad[0],\
                                        gs_enNorm, enSize[0], enRcMode);
         if (HI_SUCCESS != s32Ret)
@@ -142,7 +255,7 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
             SAMPLE_PRT("Start Venc failed!\n");
             goto END_VENC_8D1_2;
         }
-		//Â∞ÜVpssGrpÁöÑVPSS_BSTR_CHNÈÄöÈÅìÁªëÂÆöÂà∞VencGrp‰∏ä
+		//Ω´VpssGrpµƒVPSS_BSTR_CHNÕ®µ¿∞Û∂®µΩVencGrp…œ
         s32Ret = SAMPLE_COMM_VENC_BindVpss(VencGrp, VpssGrp, VPSS_BSTR_CHN);
         if (HI_SUCCESS != s32Ret)
         {
@@ -155,26 +268,24 @@ HI_S32 LIVE555_VENC_1D1_H264(HI_VOID)
     /******************************************
      step 6: stream venc process -- get stream, then save it to file.
     ******************************************/
-	 //ÂºÄ‰∫Ü‰∏Ä‰∏™Êñ∞thread
+	 //ø™¡À“ª∏ˆ–¬thread
 	// step 1:check & prepare save-file & venc-fd
-	// step 2:  Start to get streams of each channel.Â¶ÇÊûúÂÖ®Â±ÄÈùôÊÄÅÂèòÈáèpstPara->bThreadStart‰∏∫ÁúüÔºåÂàô‰∏çÊñ≠select write
+	// step 2:  Start to get streams of each channel.»Áπ˚»´æ÷æ≤Ã¨±‰¡øgs_Para.bThreadStartŒ™’Ê£¨‘Ú≤ª∂œselect write
 	// step 3 : close save-file
-    s32Ret = SAMPLE_COMM_VENC_StartGetStream(u32ViChnCnt);
+    s32Ret = LIVE555_StartGetStream(u32ViChnCnt);
     if (HI_SUCCESS != s32Ret)
     {
         SAMPLE_PRT("Start Venc failed!\n");
         goto END_VENC_8D1_3;
     }
 
-    printf("please press twice ENTER to exit this sample\n");
     getchar();
-    getchar();
-
+	getchar();
     /******************************************
      step 7: exit process
-	  ÊîπÂèòÈùôÊÄÅÂèòÈáèpstPara->bThreadStartÂÄºÔºåÁ≠âÂæÖthreadÁªìÊùü
+	…Ë÷√◊¥Ã¨¡ø£¨ πvencthreadΩ· ¯
     ******************************************/
-    SAMPLE_COMM_VENC_StopGetStream();
+    LIVE555_StopGetStream();
 
 END_VENC_8D1_3:
     for (i=0; i<u32ViChnCnt; i++)
@@ -199,6 +310,229 @@ END_VENC_8D1_0:	//system exit
 
 
 
+/******************************************************************************
+* funciton : get stream from each channels and save them
+******************************************************************************/
+HI_VOID* LIVE555_GetVencStreamProc()
+{
+    HI_S32 i;
+    HI_S32 s32ChnTotal;
+    //defines the attibutes of a VENC channel.
+    VENC_CHN_ATTR_S stVencChnAttr;
+    HI_S32 maxfd = 0;
+    struct timeval TimeoutVal;
+    fd_set read_fds;
+    HI_S32 VencFd[VENC_MAX_CHN_NUM];
+    HI_CHAR aszFileName[VENC_MAX_CHN_NUM][64];
+    FILE *pFile[VENC_MAX_CHN_NUM];
+    char szFilePostfix[10];
+    //defines the status of a VENC channel.∂®“Â±‡¬ÎÕ®µ¿µƒ◊¥Ã¨Ω·ππÃÂ°£
+    VENC_CHN_STAT_S stStat;
+    //defines the stream frame type.∂®“Â÷°¬Î¡˜¿‡–ÕΩ·ππÃÂ°£
+    VENC_STREAM_S stStream;
+    HI_S32 s32Ret;
+    VENC_CHN VencChn;
+    PAYLOAD_TYPE_E enPayLoadType[VENC_MAX_CHN_NUM];
+    s32ChnTotal = gs_Para.chnCount;
+
+    /******************************************
+     step 1:  check & prepare save-file & venc-fd
+    ******************************************/
+    if (s32ChnTotal >= VENC_MAX_CHN_NUM)
+    {
+        SAMPLE_PRT("input count invaild\n");
+        return NULL;
+    }
+    for (i = 0; i < s32ChnTotal; i++)
+    {
+        /* decide the stream file name, and open file to save stream */
+        VencChn = i;
+        //Obtains attributes of a VENC channel. ªÒ»°±‡¬ÎÕ®µ¿ Ù–‘°£
+        s32Ret = HI_MPI_VENC_GetChnAttr(VencChn, &stVencChnAttr);
+        if(s32Ret != HI_SUCCESS)
+        {
+            SAMPLE_PRT("HI_MPI_VENC_GetChnAttr chn[%d] failed with %#x!\n", \
+                   VencChn, s32Ret);
+            return NULL;
+        }
+        //defines the encoder attributes. enType union:H264/MJPEG/JPEG/MPEG4.
+	    enPayLoadType[i] = stVencChnAttr.stVeAttr.enType;
+
+        s32Ret = SAMPLE_COMM_VENC_GetFilePostfix(enPayLoadType[i], szFilePostfix);
+        if(s32Ret != HI_SUCCESS)
+        {
+            SAMPLE_PRT("SAMPLE_COMM_VENC_GetFilePostfix [%d] failed with %#x!\n", \
+                   stVencChnAttr.stVeAttr.enType, s32Ret);
+            return NULL;
+        }
+        sprintf(aszFileName[i], "stream_chn%d%s", i, szFilePostfix);
+
+        // w:write; b:open a file as a binary file;
+        pFile[i] = fopen(aszFileName[i], "wb");
+        if (!pFile[i])
+        {
+            SAMPLE_PRT("open file[%s] failed!\n",
+                   aszFileName[i]);
+            return NULL;
+        }
+
+        /* Set Venc Fd. */
+        //Obtains the device file handle of a VENC channel. ªÒ»°±‡¬ÎÕ®µ¿∂‘”¶µƒ…Ë±∏Œƒº˛æ‰±˙°£
+        VencFd[i] = HI_MPI_VENC_GetFd(i);
+        if (VencFd[i] < 0)
+        {
+            SAMPLE_PRT("HI_MPI_VENC_GetFd failed with %#x!\n",
+                   VencFd[i]);
+            return NULL;
+        }
+        if (maxfd <= VencFd[i])
+        {
+            maxfd = VencFd[i];
+        }
+    }
+
+    /******************************************
+     step 2:  Start to get streams of each channel.
+    ******************************************/
+    while (HI_TRUE == gs_Para.streamThreadStart)
+    {
+        FD_ZERO(&read_fds);
+        for (i = 0; i < s32ChnTotal; i++)
+        {
+            FD_SET(VencFd[i], &read_fds);
+        }
+
+        TimeoutVal.tv_sec  = 2;
+        TimeoutVal.tv_usec = 0;
+        s32Ret = select(maxfd + 1, &read_fds, NULL, NULL, &TimeoutVal);
+        if (s32Ret < 0)
+        {
+            SAMPLE_PRT("select failed!\n");
+            break;
+        }
+        else if (s32Ret == 0)
+        {
+            SAMPLE_PRT("get venc stream time out, exit thread\n");
+            continue;
+        }
+        else
+        {
+            //ø™ º±È¿˙∏˜∏ˆ…Ë±∏æ‰±˙
+            for (i = 0; i < s32ChnTotal; i++)
+            {
+                if (FD_ISSET(VencFd[i], &read_fds))
+                {
+                    /*******************************************************
+                     step 2.1 : query how many packs in one-frame stream.
+                    *******************************************************/
+                    memset(&stStream, 0, sizeof(stStream));
+                    //queries the status of a VENC channel
+					//≤È—Ø±‡¬ÎÕ®µ¿◊¥Ã¨°£ ‰≥ˆ±‡¬ÎÕ®µ¿µƒ◊¥Ã¨÷∏’Î°£
+                    s32Ret = HI_MPI_VENC_Query(i, &stStat);
+                    if (HI_SUCCESS != s32Ret)
+                    {
+                        SAMPLE_PRT("HI_MPI_VENC_Query chn[%d] failed with %#x!\n", i, s32Ret);
+                        break;
+                    }
+
+                    /*******************************************************
+                     step 2.2 : malloc corresponding number of pack nodes.
+                    stStat.u32CurPacks:Number of stream packets in the current frame.
+                    stStream
+                    {
+                       pstPack:Structure of a stream frame
+                       u32PackCOunt:Number of stream packets per frame
+                       u32Seq:Sequence number of a stream.
+
+                    }
+                    *******************************************************/
+					//pstPack:÷°¬Î¡˜∞¸Ω·ππ
+					//VENC_CHN_STAT_S:u32CurPacks µ±«∞÷°µƒ¬Î¡˜∞¸∏ˆ ˝°£
+				   stStream.pstPack = (VENC_PACK_S*)malloc(sizeof(VENC_PACK_S) * stStat.u32CurPacks);
+                    if (NULL == stStream.pstPack)
+                    {
+                        SAMPLE_PRT("malloc stream pack failed!\n");
+                        break;
+                    }
+
+                    /*******************************************************
+                     step 2.3 : call mpi to get one-frame stream
+                    *******************************************************/
+                    stStream.u32PackCount = stStat.u32CurPacks;
+                    //obtains encoded streams.ªÒ»°±‡¬Îµƒ¬Î¡˜,◊Ë»˚ƒ£ Ω
+                    s32Ret = HI_MPI_VENC_GetStream(i, &stStream, HI_TRUE);
+                    if (HI_SUCCESS != s32Ret)
+                    {
+                        free(stStream.pstPack);
+                        stStream.pstPack = NULL;
+                        SAMPLE_PRT("HI_MPI_VENC_GetStream failed with %#x!\n", \
+                               s32Ret);
+                        break;
+                    }
+
+                    /*******************************************************
+                     step 2.4 : save frame to file Ω´∏√stream¿Ô√ø∏ˆ¬Î¡˜∞¸¥ÊµΩŒƒº˛¿Ô
+                    *******************************************************/
+                    s32Ret = SAMPLE_COMM_VENC_SaveStream(enPayLoadType[i], pFile[i], &stStream);
+                    if (HI_SUCCESS != s32Ret)
+                    {
+                        free(stStream.pstPack);
+                        stStream.pstPack = NULL;
+                        SAMPLE_PRT("save stream failed!\n");
+                        break;
+                    }
+                    /*******************************************************
+                     step 2.5 : release stream  Õ∑≈¬Î¡˜ª∫¥Ê
+                    *******************************************************/
+                    s32Ret = HI_MPI_VENC_ReleaseStream(i, &stStream);
+                    if (HI_SUCCESS != s32Ret)
+                    {
+                        free(stStream.pstPack);
+                        stStream.pstPack = NULL;
+                        break;
+                    }
+                    /*******************************************************
+                     step 2.6 : free pack nodes
+                    *******************************************************/
+                    free(stStream.pstPack);
+                    stStream.pstPack = NULL;
+                }
+            }
+        }
+    }
+
+    /*******************************************************
+    * step 3 : close save-file
+    *******************************************************/
+    for (i = 0; i < s32ChnTotal; i++)
+    {
+        fclose(pFile[i]);
+    }
+
+    return NULL;
+}
+
+
+HI_S32 LIVE555_StopGetStream()
+{
+    if (HI_TRUE == gs_Para.streamThreadStart)
+    {
+        gs_Para.streamThreadStart = HI_FALSE;
+		//“‘◊Ë»˚µƒ∑Ω Ωµ»¥˝œﬂ≥ÃΩ· ¯
+        pthread_join(gs_Para.streamPid, 0);
+    }
+    return HI_SUCCESS;
+}
+HI_S32 LIVE555_StopCmdProc()
+{
+    if (HI_TRUE == gs_Para.cmdThreadStart)
+    {
+        gs_Para.cmdThreadStart = HI_FALSE;
+		//“‘◊Ë»˚µƒ∑Ω Ωµ»¥˝œﬂ≥ÃΩ· ¯
+        pthread_join(gs_Para.cmdPid, 0);
+    }
+    return HI_SUCCESS;
+}
 
 
 

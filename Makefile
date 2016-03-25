@@ -11,7 +11,7 @@ SRC  := $(wildcard *.c)
 OBJ  := $(SRC:%.c=%.o)
 
 #TARGET := $(OBJ:%.o=%)
-TARGET := sample_venc
+TARGET := main
 .PHONY : clean all
 
 all: $(TARGET)
